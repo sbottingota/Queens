@@ -1,8 +1,10 @@
+use std::collections::{VecDeque, HashSet};
+
 use rand::prelude::*;
 
-const GRID_SIZE: usize = 8;
+const GRID_SIZE: usize = 7;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
 struct Square {
     group: Option<usize>,
     has_queen: bool,
@@ -15,7 +17,7 @@ impl Square {
     }
 }
 
-#[derive(Debug)]
+#[derive(Eq, PartialEq, Hash, Clone, Debug)]
 struct State {
     grid: [[Square; GRID_SIZE]; GRID_SIZE],
     groups: Vec<Vec<(usize, usize)>>,
@@ -68,20 +70,38 @@ impl State {
         Self { grid, groups }
     }
 
-    fn add_queens(&mut self, n_queens: usize) {
-        let mut rng = rand::rng();
+    // try to find solutions by adding the specified number of queens to the state (using a DFS)
+    fn solve(&self, n_queens: usize) -> Vec<Self> {
+        let total_queens = n_queens + self.count_queens();
 
-        for _ in 0..n_queens {
-            loop {
-                let x = rng.random_range(0..GRID_SIZE);
-                let y = rng.random_range(0..GRID_SIZE);
+        let mut seen = HashSet::from([self.clone()]);
+        let mut next = VecDeque::from([self.clone()]);
 
-                if self.can_add_queen(x, y) {
-                    self.grid[x][y].has_queen = true;
-                    break;
+        let mut solutions = Vec::new();
+
+        while let Some(state) = next.pop_front() {
+            for x in 0..GRID_SIZE {
+                for y in 0..GRID_SIZE {
+                    if state.can_add_queen(x, y) {
+                        let mut new_state = state.clone();
+                        new_state.grid[x][y].has_queen = true;
+
+                        if !seen.contains(&new_state) {
+                            if new_state.count_queens() == total_queens {
+                                solutions.push(new_state.clone());
+
+                            } else {
+                                next.push_back(new_state.clone());
+                            }
+
+                            seen.insert(new_state);
+                        }
+                    }
                 }
             }
         }
+
+        solutions
     }
 
     fn can_add_queen(&self, x: usize, y: usize) -> bool {
@@ -112,6 +132,10 @@ impl State {
         }
 
         true
+    }
+
+    fn count_queens(&self) -> usize {
+        self.grid.iter().map(|row| row.iter().filter(|square| square.has_queen).count()).sum()
     }
 
     fn neighbors((x, y): (usize, usize)) -> Vec<(usize, usize)> {
@@ -168,9 +192,16 @@ impl State {
 }
 
 fn main() {
-    let mut state = State::new();
+    let state = State::new();
+    let solutions = state.solve(GRID_SIZE);
 
-    state.add_queens(GRID_SIZE / 2);
-    state.print();
+    if solutions.is_empty() {
+        println!("No solutions found");
+    } else {
+        for solution in solutions {
+            solution.print();
+            println!();
+        }
+    }
 }
 
