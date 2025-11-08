@@ -2,7 +2,7 @@ use std::collections::{VecDeque, HashSet};
 
 use rand::prelude::*;
 
-const GRID_SIZE: usize = 7;
+const GRID_SIZE: usize = 8;
 
 #[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
 struct Square {
@@ -70,38 +70,8 @@ impl State {
         Self { grid, groups }
     }
 
-    // try to find solutions by adding the specified number of queens to the state (using a DFS)
-    fn solve(&self, n_queens: usize) -> Vec<Self> {
-        let total_queens = n_queens + self.count_queens();
-
-        let mut seen = HashSet::from([self.clone()]);
-        let mut next = VecDeque::from([self.clone()]);
-
-        let mut solutions = Vec::new();
-
-        while let Some(state) = next.pop_front() {
-            for x in 0..GRID_SIZE {
-                for y in 0..GRID_SIZE {
-                    if state.can_add_queen(x, y) {
-                        let mut new_state = state.clone();
-                        new_state.grid[x][y].has_queen = true;
-
-                        if !seen.contains(&new_state) {
-                            if new_state.count_queens() == total_queens {
-                                solutions.push(new_state.clone());
-
-                            } else {
-                                next.push_back(new_state.clone());
-                            }
-
-                            seen.insert(new_state);
-                        }
-                    }
-                }
-            }
-        }
-
-        solutions
+    fn solutions(&self, n_queens: usize) -> impl Iterator<Item=Self> {
+        SolverIterator::new(&self, n_queens)
     }
 
     fn can_add_queen(&self, x: usize, y: usize) -> bool {
@@ -191,17 +161,82 @@ impl State {
     }
 }
 
+struct SolverIterator {
+    total_queens: usize,
+
+    seen: HashSet<State>,
+    next: VecDeque<State>,
+
+    state: State,
+
+    x: usize,
+    y: usize,
+}
+
+impl SolverIterator {
+    fn new(initial: &State, n_queens: usize) -> Self {
+        Self {
+            total_queens: n_queens + initial.count_queens(),
+
+            seen: HashSet::from([initial.clone()]),
+            next: VecDeque::new(),
+
+            state: initial.clone(),
+
+            x: 0, y: 0,
+        }
+    }
+}
+
+impl Iterator for SolverIterator {
+    type Item = State;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.x == GRID_SIZE {
+                self.x = 0;
+            }
+
+            while self.x < GRID_SIZE {
+                if self.y == GRID_SIZE {
+                    self.y = 0;
+                }
+
+                while self.y < GRID_SIZE {
+                    if self.state.can_add_queen(self.x, self.y) {
+                        let mut new_state = self.state.clone();
+                        new_state.grid[self.x][self.y].has_queen = true;
+
+                        if !self.seen.contains(&new_state) {
+                            self.seen.insert(new_state.clone());
+
+                            if new_state.count_queens() == self.total_queens {
+                                self.y += 1;
+
+                                return Some(new_state);
+
+                            } else {
+                                self.next.push_back(new_state);
+                            }
+                        }
+                    }
+
+                    self.y += 1;
+                }
+                self.x += 1;
+            }
+
+            self.state = self.next.pop_front()?;
+        }
+    }
+}
+
 fn main() {
     let state = State::new();
-    let solutions = state.solve(GRID_SIZE);
 
-    if solutions.is_empty() {
-        println!("No solutions found");
-    } else {
-        for solution in solutions {
-            solution.print();
-            println!();
-        }
+    for solution in state.solutions(GRID_SIZE) {
+        solution.print();
+        println!();
     }
 }
 
