@@ -1,8 +1,9 @@
 use std::collections::{VecDeque, HashSet};
-
 use rand::prelude::*;
+use text_io::scan;
 
 const GRID_SIZE: usize = 8;
+const N_PREPLACED_QUEENS: usize = GRID_SIZE / 2;
 
 #[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
 struct Square {
@@ -70,8 +71,9 @@ impl State {
         Self { grid, groups }
     }
 
-    fn solutions(&self, n_queens: usize) -> impl Iterator<Item=Self> {
-        SolverIterator::new(&self, n_queens)
+    // returns an iterator containing all the solutions for the supplied number of queens on the board
+    fn solutions(&self, total_queens: usize) -> impl Iterator<Item=Self> {
+        SolverIterator::new(&self, total_queens)
     }
 
     fn can_add_queen(&self, x: usize, y: usize) -> bool {
@@ -174,9 +176,9 @@ struct SolverIterator {
 }
 
 impl SolverIterator {
-    fn new(initial: &State, n_queens: usize) -> Self {
+    fn new(initial: &State, total_queens: usize) -> Self {
         Self {
-            total_queens: n_queens + initial.count_queens(),
+            total_queens,
 
             seen: HashSet::from([initial.clone()]),
             next: VecDeque::new(),
@@ -232,11 +234,38 @@ impl Iterator for SolverIterator {
 }
 
 fn main() {
-    let state = State::new();
+    let (mut current_state, solution) = 'outer: loop {
+        for new_state in State::new().solutions(N_PREPLACED_QUEENS) {
+            let solutions: Vec<_> = new_state.solutions(GRID_SIZE).collect();
 
-    for solution in state.solutions(GRID_SIZE) {
-        solution.print();
-        println!();
+            if solutions.len() == 1 {
+                break 'outer (new_state, solutions[0].clone());
+            }
+        }
+    };
+    solution.print(); // print solution for debug purposes
+
+    while current_state.grid != solution.grid {
+        print!("\n\n");
+
+        current_state.print();
+        println!("Enter coords to place queen: ");
+
+        let mut x: usize;
+        let mut y: usize;
+        scan!("{} {}", x, y);
+
+        if !current_state.can_add_queen(x, y) {
+            println!("Invalid position for queen");
+        } else if !solution.grid[x][y].has_queen {
+            println!("Wrong");
+        } else {
+            current_state.grid[x][y].has_queen = true;
+            println!("Correct");
+        }
     }
+
+    println!("All correct, well done!");
+    current_state.print();
 }
 
