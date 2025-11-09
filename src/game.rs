@@ -8,12 +8,13 @@ pub const N_PREPLACED_QUEENS: usize = GRID_SIZE / 2;
 struct Square {
     group: Option<usize>,
     has_queen: bool,
+    marked: bool,
 }
 
 impl Square {
     // return a new square with dummy values
     fn new() -> Self {
-        Self { group: None, has_queen: false }
+        Self { group: None, has_queen: false, marked: false }
     }
 }
 
@@ -117,9 +118,35 @@ impl State {
         true
     }
 
+    // commonly used getters and setters
     pub fn place_queen(&mut self, x: usize, y: usize) {
         self.grid[x][y].has_queen = true;
     }
+
+    pub fn unplace_queen(&mut self, x: usize, y: usize) {
+        self.grid[x][y].has_queen = false;
+    }
+
+    pub fn has_queen(&self, x: usize, y: usize) -> bool {
+        self.grid[x][y].has_queen
+    }
+
+    pub fn mark(&mut self, x: usize, y: usize) {
+        self.grid[x][y].marked = true;
+    }
+
+    pub fn unmark(&mut self, x: usize, y: usize) {
+        self.grid[x][y].marked = false;
+    }
+
+    pub fn is_marked(&self, x: usize, y: usize) -> bool {
+        self.grid[x][y].marked
+    }
+
+    pub fn get_cell_group(&self, x: usize, y: usize) -> usize {
+        self.grid[x][y].group.expect(&format!("Cell ({},{}) was uninitialized", x, y))
+    }
+
 
     fn count_queens(&self) -> usize {
         self.grid.iter().map(|row| row.iter().filter(|square| square.has_queen).count()).sum()
@@ -168,9 +195,10 @@ impl State {
         ret
     }
 
-    pub fn print(&self) {
+    #[allow(dead_code)]
+    pub fn print(&self) { // debug function
         for row in &self.grid {
-            for &Square { group, has_queen } in row {
+            for &Square { group, has_queen, .. } in row {
                 print!("{}{} ", group.expect("Grid was not properly initialized"), if has_queen { '*' } else { ' ' });
             }
             println!();
