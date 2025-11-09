@@ -1,10 +1,12 @@
 use std::collections::{VecDeque, HashSet};
+use std::hash::{Hash, Hasher};
+
 use rand::prelude::*;
 
 pub const GRID_SIZE: usize = 6;
 pub const N_PREPLACED_QUEENS: usize = GRID_SIZE / 2;
 
-#[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug)]
 struct Square {
     group: Option<usize>,
     has_queen: bool,
@@ -15,6 +17,21 @@ impl Square {
     // return a new square with dummy values
     fn new() -> Self {
         Self { group: None, has_queen: false, marked: false }
+    }
+}
+
+impl PartialEq for Square {
+    // ignore marks when checking for equality
+    fn eq(&self, other: &Self) -> bool {
+        self.group == other.group && self.has_queen == other.has_queen
+    }
+}
+impl Eq for Square {}
+
+impl Hash for Square {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.group.hash(state);
+        self.has_queen.hash(state);
     }
 }
 
@@ -148,9 +165,10 @@ impl State {
     }
 
 
-    fn count_queens(&self) -> usize {
+    pub fn count_queens(&self) -> usize {
         self.grid.iter().map(|row| row.iter().filter(|square| square.has_queen).count()).sum()
     }
+
 
     fn neighbors((x, y): (usize, usize)) -> Vec<(usize, usize)> {
         let mut ret = Vec::new();
