@@ -161,7 +161,7 @@ impl State {
     }
 
     pub fn get_cell_group(&self, x: usize, y: usize) -> usize {
-        self.grid[x][y].group.expect(&format!("Cell ({},{}) was uninitialized", x, y))
+        self.grid[x][y].group.unwrap_or_else(|| panic!("Cell ({},{}) was uninitialized", x, y))
     }
 
 
