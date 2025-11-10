@@ -3,8 +3,8 @@ use std::hash::{Hash, Hasher};
 
 use rand::prelude::*;
 
-pub const GRID_SIZE: usize = 6;
-pub const N_PREPLACED_QUEENS: usize = GRID_SIZE / 2;
+pub const GRID_SIZE: usize = 5;
+pub const N_PREPLACED_QUEENS: usize = GRID_SIZE / 3;
 
 #[derive(Clone, Copy, Debug)]
 struct Square {
@@ -17,6 +17,14 @@ impl Square {
     // return a new square with dummy values
     fn new() -> Self {
         Self { group: None, has_queen: false, marked: false }
+    }
+
+    fn cycle_group(&mut self) {
+        let Some(old_group) = self.group else {
+            panic!("Group not yet initialized");
+        };
+
+        self.group = Some((old_group + 1) % GRID_SIZE);
     }
 }
 
@@ -42,6 +50,17 @@ pub struct State {
 }
 
 impl State {
+    pub fn new_blank() -> Self {
+        let mut square = Square::new();
+        square.group = Some(0);
+
+        let mut groups = vec![Vec::new(); GRID_SIZE];
+        // add every square to group 0, with the rest of the groups empty
+        (0..GRID_SIZE).for_each(|x| (0..GRID_SIZE).for_each(|y| groups[0].push((x, y))));
+
+        Self { grid: [[square; GRID_SIZE]; GRID_SIZE], groups }
+    }
+
     // return a new, blank state, without queens
     pub fn new() -> Self {
         let mut rng = rand::rng();
@@ -162,6 +181,12 @@ impl State {
 
     pub fn get_cell_group(&self, x: usize, y: usize) -> usize {
         self.grid[x][y].group.unwrap_or_else(|| panic!("Cell ({},{}) was uninitialized", x, y))
+    }
+
+    pub fn cycle_square_group(&mut self, x: usize, y: usize) {
+        self.groups[self.grid[x][y].group.unwrap()].retain(|coord| *coord != (x, y)); // remove the square from the old group
+        self.grid[x][y].cycle_group();
+        self.groups[self.grid[x][y].group.unwrap()].push((x, y)); // and add it to the new group
     }
 
 

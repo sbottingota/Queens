@@ -5,9 +5,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 pub use cursive::{Cursive, CursiveExt};
 
-use cursive::views::{Panel, TextView, LinearLayout, Button};
+use cursive::views::{Panel, TextView, LinearLayout, Button, OnEventView};
 use cursive::view::View;
 use cursive::view::{Nameable, Resizable};
+
+use cursive::event::Event;
 
 use cursive::utils::markup::StyledString;
 use cursive::style::{Color, BaseColor};
@@ -35,9 +37,11 @@ const BLANK: char = '=';
 const VERIFY_KEY: char = 'v';
 const NEW_GAME_KEY: char = 'n';
 const RESET_KEY: char = 'r';
+const SOLVE_KEY: char = 's';
+const CYCLE_COLOR_KEY: char = 'c';
 const QUIT_KEY: char = 'q';
 
-const HELP_MSG: &str = formatcp!("\
+const GAME_HELP_MSG: &str = formatcp!("\
     Arrow keys to move. \n\
     Press <{}> to verify. \n\
     Press <{}> to reset the board. \n\
@@ -47,27 +51,28 @@ const HELP_MSG: &str = formatcp!("\
         - Being marked. (i.e. to rule out squares that can't contain a queen), \n\
         - Containing a queen. \n\
         - Being blank. \n\n\
-    Queen: '{}', Marked square: '{}' \n\
-    ", VERIFY_KEY, RESET_KEY, NEW_GAME_KEY, QUIT_KEY, QUEEN, MARKED);
+    Queen: '{}', marked square: '{}', blank square: '{}'. \n\
+    ", VERIFY_KEY, RESET_KEY, NEW_GAME_KEY, QUIT_KEY, QUEEN, MARKED, BLANK);
 
-pub fn init_ui(state: State, solution: State, should_loop: Arc<AtomicBool>) -> Cursive {
+const SOLVER_HELP_MSG: &str = formatcp!("\
+    Arrow keys to move. \n\
+    Press <{}> to cycle a square's color. \n\
+    Press <{}> to solve. \n\
+    Press <{}> to reset (i.e. clear) the board. \n\
+    Press <{}> to quit. \n\
+    Press <ENTER> to cycle between a square having a queen, and being blank \n\
+    Queen: '{}', blank square: '{}'. \n\n\
+    Note that if there is more than one solution, only the first one found will be displayed.
+    ", CYCLE_COLOR_KEY, SOLVE_KEY, RESET_KEY, QUIT_KEY, QUEEN, BLANK);
+
+pub fn init_game_ui(state: State, solution: State, should_loop: Arc<AtomicBool>) -> Cursive {
     let mut siv = Cursive::new();
 
-    let mut grid = LinearLayout::vertical();
-
-    for y in 0..GRID_SIZE {
-        let mut row = LinearLayout::horizontal();
-        for x in 0..GRID_SIZE {
-            row.add_child(new_cell_button(&state, x, y));
-        }
-        grid.add_child(row);
-    }
-
     let layout = LinearLayout::vertical()
-        .child(TextView::new("Queens"))
+        .child(TextView::new("Queens - Game"))
         .child(LinearLayout::horizontal()
-            .child(Panel::new(grid))
-            .child(TextView::new(HELP_MSG)))
+            .child(new_game_grid(&state))
+            .child(TextView::new(GAME_HELP_MSG)))
         .child(TextView::new("").with_name("msg_box"));
 
     siv.add_layer(layout);
@@ -99,12 +104,7 @@ pub fn init_ui(state: State, solution: State, should_loop: Arc<AtomicBool>) -> C
     // on a keypress, set the board back to its initial state, and update all the cells
     siv.add_global_callback(RESET_KEY, move |s| {
         s.set_user_data(state.clone());
-
-        for x in 0..GRID_SIZE {
-            for y in 0..GRID_SIZE {
-                update_button(s, x, y);
-            }
-        }
+        update_board(s);
     });
 
     // on a keypress, set a flag to indicate that a new game shouldn't be made after this one, then quit
@@ -119,7 +119,86 @@ pub fn init_ui(state: State, solution: State, should_loop: Arc<AtomicBool>) -> C
     siv
 }
 
-fn new_cell_button(initial_state: &State, x: usize, y: usize) -> impl View {
+pub fn init_solver_ui() -> Cursive {
+    let mut siv = Cursive::new();
+
+    let state = State::new_blank();
+
+    let layout = LinearLayout::vertical()
+        .child(TextView::new("Queens - Solver"))
+        .child(LinearLayout::horizontal()
+            .child(new_solver_grid(&state))
+            .child(TextView::new(SOLVER_HELP_MSG)))
+        .child(TextView::new("").with_name("msg_box"));
+
+    siv.add_layer(layout);
+    siv.set_user_data(state);
+
+    // on a keypress, solve the current board (if possible), and update all the cells
+    siv.add_global_callback(SOLVE_KEY, move |s| {
+        if let Some(new_state) = s.with_user_data(|state: &mut State| state.solutions(GRID_SIZE).next()).unwrap() {
+            s.set_user_data(new_state);
+            update_board(s);
+
+            s.find_name::<TextView>("msg_box").unwrap().set_content("Solved");
+
+        } else {
+            s.find_name::<TextView>("msg_box").unwrap().set_content("Unsolvable");
+        }
+    });
+
+    // clear board on keypress
+    siv.add_global_callback(RESET_KEY, move |s| {
+        s.set_user_data(State::new_blank());
+        update_board(s);
+    });
+
+    // quit on keypress
+    siv.add_global_callback(QUIT_KEY, move |s| s.quit());
+
+    siv
+}
+
+// initializes a new grid object
+fn new_game_grid(state: &State) -> impl View {
+    let mut grid = LinearLayout::vertical();
+
+    for y in 0..GRID_SIZE {
+        let mut row = LinearLayout::horizontal();
+        for x in 0..GRID_SIZE {
+            let button = new_cell_button(state, x, y, true);
+            row.add_child(button);
+
+        }
+        grid.add_child(row);
+    }
+
+    Panel::new(grid)
+}
+
+fn new_solver_grid(state: &State) -> impl View {
+    let mut grid = LinearLayout::vertical();
+
+    for y in 0..GRID_SIZE {
+        let mut row = LinearLayout::horizontal();
+        for x in 0..GRID_SIZE {
+            let button = new_cell_button(state, x, y, false);
+            let button = OnEventView::new(button)
+                .on_event(Event::Char(CYCLE_COLOR_KEY),
+                move |s| {
+                    s.user_data::<State>().unwrap().cycle_square_group(x, y);
+                    update_board(s);
+                });
+
+            row.add_child(button);
+        }
+        grid.add_child(row);
+    }
+
+    Panel::new(grid)
+}
+
+fn new_cell_button(initial_state: &State, x: usize, y: usize, allow_marking: bool) -> impl View {
     let label = get_button_label(initial_state, x, y);
 
     if initial_state.has_queen(x, y) {
@@ -133,8 +212,12 @@ fn new_cell_button(initial_state: &State, x: usize, y: usize) -> impl View {
                     } else if state.is_marked(x, y) {
                         state.unmark(x, y);
                         state.place_queen(x, y);
-                    } else {
-                        state.mark(x, y);
+                    } else { // blank
+                        if allow_marking {
+                            state.mark(x, y);
+                        } else {
+                            state.place_queen(x, y);
+                        }
                     }
                 });
 
@@ -145,6 +228,14 @@ fn new_cell_button(initial_state: &State, x: usize, y: usize) -> impl View {
         .fixed_height(BUTTON_HEIGHT)
 }
 
+fn update_board(siv: &mut Cursive) {
+    for x in 0..GRID_SIZE {
+        for y in 0..GRID_SIZE {
+            update_button(siv, x, y);
+        }
+    }
+}
+
 fn update_button(siv: &mut Cursive, x: usize, y: usize) {
     if let Some(mut btn) = siv.find_name::<Button>(&format!("cell_{}_{}", x, y)) {
         let state = siv.user_data().unwrap();
@@ -153,6 +244,14 @@ fn update_button(siv: &mut Cursive, x: usize, y: usize) {
 }
 
 fn get_button_label(state: &State, x: usize, y: usize) -> StyledString {
+    if state.get_cell_group(x, y) >= COLORS.len() {
+        panic!("\
+            Boards needing more than {} colors are not supported.\n\
+            To fix this, manually add more colors to the 'COLORS' constant defined near the top of src/ui.rs.",
+            COLORS.len()
+        );
+    }
+
     StyledString::styled({
         if state.has_queen(x, y) {
             QUEEN
